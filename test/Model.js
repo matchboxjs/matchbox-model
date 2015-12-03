@@ -145,6 +145,7 @@ describe("Model", function () {
     simple("undefined", function (model) {
       verifyStates(model, "undefined", undefined)
     })
+    // TODO: date tests
     // welp..
     //simple("NaN", function (model) {
     //  verifyValueChange(model, "NaN", NaN)
@@ -167,6 +168,7 @@ describe("Model", function () {
       verifySchemaValueChange(model, "boolean1", true, [null, undefined, [], {}, 1, "test", NaN])
       verifySchemaValueChange(model, "boolean2", false, [null, undefined, [], {}, 1, "test", NaN])
     })
+    // TODO: date tests
   })
 
 
@@ -182,5 +184,10 @@ describe("Model", function () {
       verifyDefaultValue(model, "boolean1", true)
       verifyDefaultValue(model, "boolean2", false)
     })
+    // TODO: date tests
   })
+
+  // TODO: test collections
+  // TODO: test data conversions (toJSON, fromJSON)
+  // TODO: test slices
 })
