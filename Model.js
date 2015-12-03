@@ -1,7 +1,6 @@
 var define = require("matchbox-util/object/define")
 var factory = require("matchbox-factory")
 var forIn = require("matchbox-util/object/in")
-var inherit = require("matchbox-factory/inherit")
 var CacheExtension = require("matchbox-factory/CacheExtension")
 var Radio = require("matchbox-radio")
 var Property = require("./schema/Property")
@@ -45,12 +44,30 @@ module.exports = factory({
 
   prototype: {
     propertyCount: 0,
+    /**
+     * Ensures that the model only contains values according to its schema.
+     * If true, only the properties in the model's schema are available for operations.
+     * Attempting to access a property if a strict model's schema doesn't define it will throw an error.
+     * */
+    strict: false,
 
     // DATA CONVERSION
 
+    /**
+     * returns the default slice (the whole model as raw json)
+     * */
     toJSON: function () {
       return this.getSlice("default")
     },
+    /**
+     * Re-builds the model from raw data according to its schema.
+     * - only sets properties defined in the schema
+     * - if a property already has value it doesn't change it
+     * - unset properties will be initialized to their schema default value
+     *
+     * @param {Object} data
+     * @return {Model} this
+     * */
     fromRawData: function (data) {
       if (typeof data == "string") {
         try {
@@ -78,6 +95,14 @@ module.exports = factory({
 
       return this
     },
+    /**
+     * Returns a slice of the model.
+     * May contain the whole model, or only specific properties.
+     * The returned value is a raw representation of the model suitable to store as JSON.
+     *
+     * @param {String} slice the defined slice name
+     * @return {*}
+     * */
     getSlice: function (slice) {
       if (slice == null) {
         slice = "default"
@@ -107,44 +132,139 @@ module.exports = factory({
 
       throw new Error("Unable to access unknown schema: '" + name + "'")
     },
+    verifyAccess: function (name, errorMessage) {
+      if (!this.strict) return true
+      if (!this.getSchema(name)) throw new Error(errorMessage || "Unable to access foreign property on strict model: '"+name+"'")
+      return true
+    },
 
     // PROPERTY ACCESS
 
+    /**
+     * Returns the current active value of a property.
+     * - if the value changed, the changed value
+     * - otherwise the original one
+     *
+     * @param {String} propertyName
+     * @return {*}
+     * */
     get: function (propertyName) {
+      this.verifyAccess(propertyName)
       return this.isPropertyChanged(propertyName)
         ? this.getChangedValue(propertyName)
         : this.getOriginalValue(propertyName)
     },
+    /**
+     * Returns the current value of a property.
+     * - the current active value if the value is set (changed or initialized)
+     * - otherwise returns the default value
+     *
+     * @param {String} propertyName
+     * @return {*}
+     * */
     getValue: function (propertyName) {
       return this.isSet(propertyName)
         ? this.get(propertyName)
         : this.getDefaultValue(propertyName)
     },
+    /**
+     * Returns the original value which a property was initialized with.
+     *
+     * @param {String} propertyName
+     * @return {*}
+     * */
     getOriginalValue: function (propertyName) {
+      this.verifyAccess(propertyName)
       return this._values[propertyName]
     },
+    /**
+     * Returns the default schema value of a property
+     *
+     * @param {String} propertyName
+     * @return {*}
+     * */
     getDefaultValue: function (propertyName) {
+      this.verifyAccess(propertyName)
       var property = this.getSchema(propertyName)
       return property.getDefault()
     },
+    /**
+     * Returns the changed value of a property.
+     *
+     * @param {String} propertyName
+     * @return {*}
+     * */
     getChangedValue: function (propertyName) {
+      this.verifyAccess(propertyName)
       return this._changed[propertyName]
     },
 
     // PROPERTY CHECK
 
+    /**
+     * Check if a property is changed.
+     *
+     * @param {String} propertyName
+     * @return {boolean}
+     * */
     isPropertyChanged: function (propertyName) {
+      this.verifyAccess(propertyName)
       return this._changed.hasOwnProperty(propertyName)
     },
-    isSet: function (propertyName) {
-      return null != this.get(propertyName)
+    /**
+     * Check if a property was initialized with a value.
+     * - an initialized value is not undefined and not null.
+     *
+     * @param {String} propertyName
+     * @return {boolean}
+     * */
+    isInitialized: function (propertyName) {
+      this.verifyAccess(propertyName)
+      return this._values.hasOwnProperty(propertyName) && this._values[propertyName] != null
     },
+    /**
+     * Check if a property has a changed or initialized value.
+     *
+     * @param {String} propertyName
+     * @return {boolean}
+     * */
+    isSet: function (propertyName) {
+      this.verifyAccess(propertyName)
+      return this.isPropertyChanged(propertyName) || this.isInitialized(propertyName)
+    },
+    /**
+     * Check if a property has any value that is not null or undefined.
+     * - has a changed value
+     * - has an initialized value
+     * - has a default value
+     *
+     * @param {String} propertyName
+     * @return {boolean}
+     * */
     hasValue: function (propertyName) {
+      this.verifyAccess(propertyName)
       return null != this.getValue(propertyName)
     },
 
     // PROPERTY CHANGE
 
+    /**
+     * Sets a property's value
+     * - setting a value unequal to the original will:
+     *   - change the model
+     *   - trigger a change event
+     * - setting a value unequal to the previous changed value will:
+     *   - change the model if it isn't already changed
+     *   - trigger a change event
+     * - setting a value to the original value from a changed will:
+     *   - revert the property undoing the change
+     *   - trigger a change event
+     * - setting a value to its current active value will do nothing
+     *
+     * @param {String} propertyName
+     * @param {*} value
+     * @return {*} value
+     * */
     set: function (propertyName, value) {
       if (value == this.getOriginalValue(propertyName)) {
         this.revertChange(propertyName)
@@ -153,34 +273,63 @@ module.exports = factory({
         if (!this.isPropertyChanged(propertyName)) {
           ++this.changedPropertyCount
         }
+        var changed = this._changed[propertyName] != value
         this._changed[propertyName] = value
+        if (changed) {
+          this.broadcast("change")
+        }
       }
       return value
     },
 
     // REVERT
 
+    /**
+     * Reverts a property's changed value if it was changed before.
+     *
+     * @param {String} propertyName
+     * @return {boolean} true if it was changed before
+     * */
     revertChange: function (propertyName) {
       if (this.isPropertyChanged(propertyName)) {
         --this.changedPropertyCount
+        this.broadcast("change")
       }
       return delete this._changed[propertyName]
     },
+    /**
+     * Reverts all changes in the model.
+     *
+     * @return {boolean} if the model was changed
+     * */
     revertAllChanges: function () {
-      var model = this
-      forIn(this._changed, function (name) {
-        model.revertChange(name)
-      })
+      var changed = this.isChanged
+
+      this._changed = {}
+      if (changed) {
+        this.broadcast("change")
+      }
+
+      return changed
     },
 
     // COMMIT
 
+    /**
+     * Set the original value to the changed value if it was changed
+     *
+     * @param {String} propertyName
+     * */
     commitChange: function (propertyName) {
       if (this.isPropertyChanged(propertyName)) {
         this._values[propertyName] = this._changed[propertyName]
-        this.revertChange(propertyName)
+        delete this._changed[propertyName]
+        --this.changedPropertyCount
       }
     },
+    /**
+     * Set all values to their changed values if they were changed
+     * */
     commitAllChanges: function () {
       var model = this
       forIn(this._changed, function (name) {
@@ -190,9 +339,19 @@ module.exports = factory({
 
     // ERASE
 
+    /**
+     * Remove the value if a property
+     * Note: it doesn't remove the changed value.
+     *
+     * @param {String} propertyName
+     * */
     eraseValue: function (propertyName) {
       this._values[propertyName] = null
     },
+    /**
+     * Clears the model's original values.
+     * Note: it doesn't remove changed values.
+     * */
     eraseAllValues: function () {
       var model = this
       forIn(this._changed, function (name) {
