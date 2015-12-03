@@ -1,6 +1,8 @@
 var include = require("matchbox-factory/include")
 var Collection = require("./Collection")
 
+module.exports = ArrayCollection
+
 function ArrayCollection () {
   Collection.call(this)
 }

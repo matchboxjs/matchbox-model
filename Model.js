@@ -29,10 +29,13 @@ module.exports = factory({
     'default': "*"
   },
 
+  schema: {},
+
   constructor: function Model() {
     define.value(this, "_values", {})
     define.value(this, "_changed", {})
     this.changedPropertyCount = 0
+    Radio.call(this)
     Model.initialize(this)
   },
 
@@ -84,7 +87,7 @@ module.exports = factory({
         var storedValue = data[name]
 
         if (storedValue == null) {
-          if (!this.isSet(name)) {
+          if (!model.isSet(name)) {
             model._values[name] = property.getDefault()
           }
         }
@@ -123,7 +126,7 @@ module.exports = factory({
 
     getSchema: function (name) {
       var property
-      if (this.schema.hasOwnProperty(name)) {
+      if (this.schema && this.schema.hasOwnProperty(name)) {
         property = this.schema[name]
       }
       if (property instanceof Property) {
@@ -132,9 +135,12 @@ module.exports = factory({
 
       throw new Error("Unable to access unknown schema: '" + name + "'")
     },
+    hasSchema: function (name) {
+      return !!this.schema && this.schema.hasOwnProperty(name)
+    },
     verifyAccess: function (name, errorMessage) {
       if (!this.strict) return true
-      if (!this.getSchema(name)) throw new Error(errorMessage || "Unable to access foreign property on strict model: '"+name+"'")
+      if (!this.hasSchema(name)) throw new Error(errorMessage || "Unable to access foreign property on strict model: '"+name+"'")
       return true
     },
 
@@ -151,8 +157,8 @@ module.exports = factory({
     get: function (propertyName) {
       this.verifyAccess(propertyName)
       return this.isPropertyChanged(propertyName)
-        ? this.getChangedValue(propertyName)
-        : this.getOriginalValue(propertyName)
+          ? this.getChangedValue(propertyName)
+          : this.getOriginalValue(propertyName)
     },
     /**
      * Returns the current value of a property.
@@ -164,8 +170,8 @@ module.exports = factory({
      * */
     getValue: function (propertyName) {
       return this.isSet(propertyName)
-        ? this.get(propertyName)
-        : this.getDefaultValue(propertyName)
+          ? this.get(propertyName)
+          : this.getDefaultValue(propertyName)
     },
     /**
      * Returns the original value which a property was initialized with.
@@ -175,7 +181,9 @@ module.exports = factory({
      * */
     getOriginalValue: function (propertyName) {
       this.verifyAccess(propertyName)
-      return this._values[propertyName]
+      return this._values.hasOwnProperty(propertyName)
+          ? this._values[propertyName]
+          : null
     },
     /**
      * Returns the default schema value of a property
@@ -185,8 +193,11 @@ module.exports = factory({
      * */
     getDefaultValue: function (propertyName) {
       this.verifyAccess(propertyName)
-      var property = this.getSchema(propertyName)
-      return property.getDefault()
+      if (this.hasSchema(propertyName)) {
+        var property = this.getSchema(propertyName)
+        return property.getDefault()
+      }
+      throw new Error("Unable to access unknown default value: '" + propertyName + "'")
     },
     /**
      * Returns the changed value of a property.
@@ -196,7 +207,9 @@ module.exports = factory({
      * */
     getChangedValue: function (propertyName) {
       this.verifyAccess(propertyName)
-      return this._changed[propertyName]
+      return this._changed.hasOwnProperty(propertyName)
+          ? this._changed[propertyName]
+          : null
     },
 
     // PROPERTY CHECK
@@ -266,15 +279,30 @@ module.exports = factory({
      * @return {*} value
      * */
     set: function (propertyName, value) {
-      if (value == this.getOriginalValue(propertyName)) {
+      this.verifyAccess(propertyName)
+      if (this.isInitialized(value) && value == this.getOriginalValue(propertyName)) {
         this.revertChange(propertyName)
       }
       else {
+        if (this.hasSchema(propertyName)) {
+          var schema = this.getSchema(propertyName)
+          if (!schema.verifyValue(value)) {
+            throw new Error("Unable to set invalid type: " + schema.type + " " + propertyName)
+          }
+        }
+
+        var changed
+
         if (!this.isPropertyChanged(propertyName)) {
           ++this.changedPropertyCount
+          changed = true
         }
-        var changed = this._changed[propertyName] != value
+        else {
+          changed = this._changed[propertyName] !== value
+        }
+
         this._changed[propertyName] = value
+
         if (changed) {
           this.broadcast("change")
         }
@@ -291,6 +319,7 @@ module.exports = factory({
      * @return {boolean} true if it was changed before
      * */
     revertChange: function (propertyName) {
+      this.verifyAccess(propertyName)
       if (this.isPropertyChanged(propertyName)) {
         --this.changedPropertyCount
         this.broadcast("change")
@@ -321,6 +350,7 @@ module.exports = factory({
      * @param {String} propertyName
      * */
     commitChange: function (propertyName) {
+      this.verifyAccess(propertyName)
       if (this.isPropertyChanged(propertyName)) {
         this._values[propertyName] = this._changed[propertyName]
         delete this._changed[propertyName]
@@ -346,6 +376,7 @@ module.exports = factory({
      * @param {String} propertyName
      * */
     eraseValue: function (propertyName) {
+      this.verifyAccess(propertyName)
       this._values[propertyName] = null
     },
     /**

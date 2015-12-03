@@ -10,3 +10,7 @@ function FloatProperty (property) {
 inherit(FloatProperty, Property)
 
 FloatProperty.prototype.type = "float"
+
+FloatProperty.prototype.verifyValue = function (value) {
+  return typeof value == "number" && !isNaN(value)
+}

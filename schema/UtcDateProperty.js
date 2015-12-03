@@ -19,6 +19,10 @@ UtcDateProperty.prototype.getRealValueOf = function (rawValue) {
   return new Date(rawValue)
 }
 
+UtcDateProperty.prototype.verifyValue = function (value) {
+  return value instanceof Date
+}
+
 UtcDateProperty.prototype.toString = function (value) {
   return "" + value.getTime()
 }

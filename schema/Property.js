@@ -15,6 +15,8 @@ function Property (property) {
 }
 
 Property.prototype.type = ""
+// TODO: treat non primitive values differently when checking for change on model
+Property.prototype.primitive = true
 
 Property.prototype.getDefault = function () {
   var defaultValue = typeof this.default == "function"
@@ -92,6 +94,10 @@ Property.prototype.getRawValueOf = function (modelValue, slice) {
 
 Property.prototype.getRealValueOf = function (rawValue) {
   return rawValue
+}
+
+Property.prototype.verifyValue = function (value) {
+  return true
 }
 
 Property.prototype.create = function (parsedValue) {
