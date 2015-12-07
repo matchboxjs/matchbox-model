@@ -5,6 +5,7 @@ var CacheExtension = require("matchbox-factory/CacheExtension")
 var Radio = require("matchbox-radio")
 var Property = require("./schema/Property")
 var Slice = require("./Slice")
+var Storage = require("./Storage")
 
 module.exports = factory({
   include: [Radio],
@@ -22,14 +23,21 @@ module.exports = factory({
       }
 
       return slice
+    }),
+    storage: new CacheExtension(function (prototype, name, storage) {
+      if (typeof storage != "function") {
+        console.log("Unable to create storage: initializer is not a function")
+      }
+
+      return new Storage(storage)
     })
   },
 
   slices: {
     'default': "*"
   },
-
   schema: {},
+  storage: {},
 
   constructor: function Model() {
     define.value(this, "_values", {})
@@ -142,6 +150,65 @@ module.exports = factory({
       if (!this.strict) return true
       if (!this.hasSchema(name)) throw new Error(errorMessage || "Unable to access foreign property on strict model: '"+name+"'")
       return true
+    },
+
+    // STORAGE
+
+    getStorage: function (name) {
+      var storage
+      name = name || "default"
+      if (typeof name == "string") {
+        storage = this.storage[name]
+      }
+      if (!(storage instanceof Storage)) {
+        throw new Error("Invalid storage: '" + name + "'")
+      }
+
+      return storage
+    },
+    /**
+     * Upload a slice of the model to a remote storage
+     *
+     * @param {String} storage
+     * @param {String} slice
+     * @return {Promise}
+     * */
+    upload: function (storage, slice) {
+      if (!slice) {
+        storage = slice
+        slice = null
+      }
+
+      var data = this.getSlice(slice)
+      var storage = this.getStorage(storage)
+
+      return storage.upload(data)
+    },
+    /**
+     * Update the model from a remote storage
+     *
+     * @param {String} storage
+     * @return {Promise}
+     * */
+    update: function (storage) {
+      var model = this
+      var storage = this.getStorage(storage)
+
+      return storage.update().then(function (response) {
+        if (response.ok) {
+          return response.json(function (data) {
+            model.fromRawData(data)
+            return model
+          }).catch(function (e) {
+            console.error("Failed to update model from remote storage: Invalid response data")
+            throw e
+          })
+        }
+        else {
+          console.warn("Failed to update model from remote storage: Unsuccessful request with status " + storage.status)
+          return response
+        }
+      })
     },
 
     // PROPERTY ACCESS

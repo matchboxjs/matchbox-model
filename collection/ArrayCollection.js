@@ -6,7 +6,9 @@ module.exports = ArrayCollection
 function ArrayCollection () {
   Collection.call(this)
 }
+
 ArrayCollection.prototype = []
+
 include(ArrayCollection, Collection)
 
 function change (collection, arrayMethod, args) {
