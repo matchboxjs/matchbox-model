@@ -4,18 +4,11 @@ function Storage (request) {
   this.request = request
 }
 
-Storage.prototype.createRequest = function (data, method) {
-  var requestInit = this.request()
+Storage.prototype.createRequest = function (model, data, method) {
+  var requestInit = this.request(model)
 
-  if (!this.request.method) {
+  if (!requestInit.method) {
     requestInit.method = method
-  }
-
-  if (data != null) {
-    if (typeof data != "string") {
-      data = JSON.stringify(data)
-    }
-    requestInit.body = data
   }
 
   var request = new window.Request(requestInit.url, requestInit)
@@ -27,15 +20,22 @@ Storage.prototype.createRequest = function (data, method) {
     request.headers.set("Accept", "application/json")
   }
 
+  if (data != null) {
+    if (typeof data != "string") {
+      data = JSON.stringify(data)
+    }
+    request.body = data
+  }
+
   return request
 }
 
-Storage.prototype.upload = function (data) {
-  var request = this.createRequest(data, "POST")
+Storage.prototype.upload = function (model, data) {
+  var request = this.createRequest(model, data, "POST")
   return window.fetch(request.url, request)
 }
 
-Storage.prototype.update = function () {
-  var request = this.createRequest(null, "GET")
+Storage.prototype.update = function (model) {
+  var request = this.createRequest(model, null, "GET")
   return window.fetch(request.url, request)
 }

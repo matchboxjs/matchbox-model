@@ -182,7 +182,7 @@ module.exports = factory({
       var data = this.getSlice(slice)
       var storage = this.getStorage(storage)
 
-      return storage.upload(data)
+      return storage.upload(this, data)
     },
     /**
      * Update the model from a remote storage
@@ -194,7 +194,7 @@ module.exports = factory({
       var model = this
       var storage = this.getStorage(storage)
 
-      return storage.update().then(function (response) {
+      return storage.update(this).then(function (response) {
         if (response.ok) {
           return response.json(function (data) {
             model.fromRawData(data)
