@@ -129,6 +129,23 @@ module.exports = factory({
       var rawData = slice.applyTo(this)
       return rawData
     },
+    /**
+     * Return an individual property's raw value
+     *
+     * @param {String} name
+     * @param {*}      [defaultValue]
+     *
+     * @return {*} it returns undefined if the model doesn't has this value
+     * */
+    getRawValue: function (name, defaultValue) {
+      var property = this.getSchema(name)
+      if (this.hasValue(name)) {
+        var value = this.getValue(name)
+        return property.getRawDataOf(value)
+      }
+
+      return defaultValue
+    },
 
     // SCHEMA
 
