@@ -13,7 +13,7 @@ function MapCollection () {
 include(MapCollection, Collection)
 
 MapCollection.prototype.toRawData = function (property, slice) {
-  return this.map(function (key, modelData) {
+  return this.map(function (modelData) {
     return property.getRawValueOf(modelData, slice)
   })
 }
@@ -88,27 +88,43 @@ MapCollection.prototype.clear = function () {
 }
 
 MapCollection.prototype.forEach = function (cb, context) {
+  var collection = this
+  context = context || this
   this.__keys.forEach(function (key, i) {
-    cb(key, this.__values[i], context || this)
-  }, this)
+    cb.call(context, collection.__values[i], key, collection)
+  })
 }
 
 MapCollection.prototype.map = function (cb, context) {
+  var collection = this
+  context = context || this
   var obj = {}
   this.__keys.forEach(function (key, i) {
-    obj[key] = cb.call(this || this, key, this.__values[i])
-  }, this)
+    obj[key] = cb.call(context, collection.__values[i], key, collection)
+  })
   return obj
 }
 
+MapCollection.prototype.reduce = function (cb, initValue, context) {
+  var collection = this
+  context = context || this
+  return this.__keys.reduce(function (aggregateValue, key, i) {
+    cb.call(context, aggregateValue, collection.__values[i], key, collection)
+  }, initValue)
+}
+
 MapCollection.prototype.filter = function (cb, context) {
+  var collection = this
+  context = context || this
   return this.__keys.filter(function (key, i) {
-    return cb(key, this.__values[i], context || this)
-  }, this)
+    return cb.call(context, collection.__values[i], key, collection)
+  })
 }
 
 MapCollection.prototype.some = function (cb, context) {
+  var collection = this
+  context = context || this
   return this.__keys.some(function (key, i) {
-    cb(key, this.__values[i], context || this)
-  }, this)
+    cb.call(context, collection.__values[i], key, collection)
+  })
 }
