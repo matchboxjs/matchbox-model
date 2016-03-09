@@ -1,60 +1,161 @@
-var define = require("matchbox-util/object/define")
-var factory = require("matchbox-factory")
-var forIn = require("matchbox-util/object/in")
-var CacheExtension = require("matchbox-factory/CacheExtension")
-var Radio = require("matchbox-radio")
+var forIn = require("backyard/object/in")
+var factory = require("offspring")
+var CacheExtension = factory.CacheExtension
+var Radio = require("stations")
 var Property = require("./schema/Property")
+var schema = require("./schema")
 var Slice = require("./Slice")
-var Storage = require("./Storage")
+var ArrayCollection = require("./collection/ArrayCollection")
+var MapCollection = require("./collection/MapCollection")
+var Storage = require("./storage/Storage")
 
-module.exports = factory({
+var undefinedProperty = new Property()
+
+// Schema
+
+/**
+ *
+ * @param {Model} model
+ * @param {String} propertyName
+ * @return {Property}
+ * */
+function getProperty(model, propertyName) {
+  if (inSchema(model, propertyName)) {
+    var property = model.schema[propertyName]
+    if (property instanceof Property) {
+      return property
+    }
+    throw new Error("Unable to access '" + propertyName + "': Invalid property descriptor.")
+  }
+  else if (model.strict) {
+    throw new Error("Unable to access '" + propertyName + "': Missing property descriptor.")
+  }
+  return undefinedProperty
+}
+
+function inSchema(model, name) {
+  return !!model.schema && model.schema.hasOwnProperty(name)
+}
+
+function attemptAccess(model, propertyName) {
+  if (model.strict && !inSchema(model, propertyName)) {
+    throw new Error("Unable to access '" + propertyName + "': Missing property descriptor.")
+  }
+}
+
+function verifyModification(model, propertyName) {
+  if (model.strict && !inSchema(model, propertyName)) {
+    throw new Error("Unable to modify '" + propertyName + "': Strict schema.")
+  }
+}
+
+function changeValue(model, propertyName, newValue) {
+  model.valuesChanged[propertyName] = newValue
+  ++model.changedPropertyCount
+}
+
+function unChangeValue(model, propertyName) {
+  delete model.valuesChanged[propertyName]
+  --model.changedPropertyCount
+}
+
+function commitChange(model, propertyName) {
+  model.valuesOriginal[propertyName] = model.valuesChanged[propertyName]
+  unChangeValue(model, propertyName)
+}
+
+function broadcastPropertyChange(model, propertyName) {
+  model.broadcast("change:" + propertyName)
+}
+function broadcastGenericChange(model) {
+  model.broadcast("change")
+}
+function broadcastChange(model, propertyName) {
+  broadcastPropertyChange(model, propertyName)
+  broadcastGenericChange(model)
+}
+
+function reduceKeys(model, cb) {
+  return model.keys().reduce(function(obj, key) {
+    cb(key, obj)
+    return obj
+  }, {})
+}
+
+function transformValues(model, cb) {
+  return reduceKeys(model, function(key, obj) {
+    obj[key] = cb(key)
+  })
+}
+
+var Model = factory({
+  strict: false,
   include: [Radio],
 
   extensions: {
-    schema: new CacheExtension(function (prototype, name, property) {
+    schema: new CacheExtension(function(prototype, name, property) {
+      if (!(property instanceof Property)) {
+        property = schema.create(name, property)
+      }
       property.name = property.name || name
       ++prototype.propertyCount
+      if (!prototype.hasOwnProperty("propertyList")) {
+        prototype.propertyList = []
+      }
+      prototype.propertyList.push(property.name)
 
       return property
     }),
-    slices: new CacheExtension(function (prototype, name, slice) {
+    slices: new CacheExtension(function(prototype, name, slice) {
       if (!(slice instanceof Slice)) {
         slice = new Slice(slice)
       }
 
       return slice
     }),
-    storage: new CacheExtension(function (prototype, name, storage) {
-      if (typeof storage != "function") {
-        console.log("Unable to create storage: initializer is not a function")
+    storage: new CacheExtension(function(prototype, name, storage) {
+      if (!(storage instanceof Storage)) {
+        throw new Error("Invalid block: not a storage")
       }
 
-      return new Storage(storage)
+      return storage
     })
   },
 
   slices: {
-    'default': "*"
+    "default": "*"
   },
   schema: {},
   storage: {},
 
+  /**
+   * @constructor Model
+   * @property {boolean} isChanged
+   * */
   constructor: function Model() {
-    define.value(this, "_values", {})
-    define.value(this, "_changed", {})
-    this.changedPropertyCount = 0
+    var model = this
     Radio.call(this)
+    this.valuesOriginal = {}
+    this.valuesChanged = {}
+    this.errors = {}
+    this.changedPropertyCount = 0
     Model.initialize(this)
-  },
+    this.keys().forEach(function(propertyName) {
+      var property = getProperty(model, propertyName)
+      if (property.primitive) return
 
-  accessor: {
-    isChanged: function () {
-      return this.changedPropertyCount > 0
-    }
+      if (property.type == "model" || property.collection) {
+        var value = model.get(propertyName)
+        value.subscribe("change", function() {
+          broadcastChange(model, propertyName)
+        })
+      }
+    })
   },
 
   prototype: {
     propertyCount: 0,
+    propertyList: [],
     /**
      * Ensures that the model only contains values according to its schema.
      * If true, only the properties in the model's schema are available for operations.
@@ -62,416 +163,597 @@ module.exports = factory({
      * */
     strict: false,
 
-    // DATA CONVERSION
+    // Conversion
 
     /**
-     * returns the default slice (the whole model as raw json)
+     * Generic toJSON.
+     *
+     * @this Model
+     * @return {Object}
      * */
-    toJSON: function () {
-      return this.getSlice("default")
+    toJSON: function() {
+      return this.slice("default")
     },
     /**
-     * Re-builds the model from raw data according to its schema.
-     * - only sets properties defined in the schema
-     * - if a property already has value it doesn't change it
-     * - unset properties will be initialized to their schema default value
+     * Stringify a property or the whole model.
      *
-     * @param {Object} data
+     * @this Model
+     * @return {string}
+     * */
+    stringify: function() {
+      return ""
+    },
+    /**
+     * Generic toString
+     * @return {String}
+     * */
+    toString: function() {
+      return ""
+    },
+    /**
+     * Serialize the model.
+     *
+     * @this Model
+     * @return {Object}
+     * */
+    serialize: function() {
+      return this.slice("default")
+    },
+    /**
+     * Restore every value in the model with a serialized data set.
+     *
+     * @this Model
+     * @param {*} serialized
      * @return {Model} this
      * */
-    fromRawData: function (data) {
-      if (typeof data == "string") {
+    restore: function(serialized) {
+      if (typeof serialized == "string") {
         try {
-          data = JSON.parse(data)
-        } catch (e) {
-          console.error("Unable to restore model: invalid data")
-          return this
+          serialized = JSON.parse(serialized)
+        }
+        catch (e) {
+          console.error(e)
+          throw new Error("Unable to restore model: invalid data")
         }
       }
 
       var model = this
 
-      forIn(this.schema, function (name, property) {
-        var storedValue = data[name]
+      forIn(this.schema, function(name, property) {
+        var serializedValue = serialized[name]
+        var value
 
-        if (storedValue == null) {
-          if (!model.isSet(name)) {
-            model._values[name] = property.getDefault()
+        if (serializedValue != null) {
+          if (property.collection) {
+            // collection
+            switch (property.collection) {
+              case "array":
+                value = new ArrayCollection()
+                break
+              case "map":
+                value = new MapCollection()
+                break
+            }
+            value.parse(serializedValue, property)
+          }
+          else {
+            // not a collection
+            value = property.restore(serializedValue)
           }
         }
-        else {
-          model._values[name] = property.getRealDataFrom(storedValue)
+        else if (!model.isSet(name)) {
+          // no value to restore, use default
+          value = property.getDefault()
         }
+
+        model.valuesOriginal[name] = value
       })
 
       return this
     },
+
+    // Storage
+
     /**
-     * Returns a slice of the model.
-     * May contain the whole model, or only specific properties.
-     * The returned value is a raw representation of the model suitable to store as JSON.
+     * Returns a shared storage adapter
      *
-     * @param {String} slice the defined slice name
-     * @return {*}
+     * @this Model
+     * @param {String} storageName
+     * @return {Storage}
      * */
-    getSlice: function (slice) {
-      if (slice == null) {
-        slice = "default"
-      }
-
-      if (typeof slice == "string") {
-        if (!this.slices.hasOwnProperty(slice)) {
-          throw new Error("Unable to get slice of model: invalid slice name '"+slice+"'")
-        }
-        slice = this.slices[slice]
-      }
-
-      var rawData = slice.applyTo(this)
-      return rawData
-    },
-    /**
-     * Return an individual property's raw value
-     *
-     * @param {String} name
-     * @param {*}      [defaultValue]
-     *
-     * @return {*} it returns undefined if the model doesn't has this value
-     * */
-    getRawValue: function (name, defaultValue) {
-      var property = this.getSchema(name)
-      if (this.hasValue(name)) {
-        var value = this.getValue(name)
-        return property.getRawDataOf(value)
-      }
-
-      return defaultValue
-    },
-
-    // SCHEMA
-
-    getSchema: function (name) {
-      var property
-      if (this.schema && this.schema.hasOwnProperty(name)) {
-        property = this.schema[name]
-      }
-      if (property instanceof Property) {
-        return property
-      }
-
-      throw new Error("Unable to access unknown schema: '" + name + "'")
-    },
-    hasSchema: function (name) {
-      return !!this.schema && this.schema.hasOwnProperty(name)
-    },
-    verifyAccess: function (name, errorMessage) {
-      if (!this.strict) return true
-      if (!this.hasSchema(name)) throw new Error(errorMessage || "Unable to access foreign property on strict model: '"+name+"'")
-      return true
-    },
-
-    // STORAGE
-
-    getStorage: function (name) {
-      var storage
-      name = name || "default"
-      if (typeof name == "string") {
-        storage = this.storage[name]
-      }
+    getStorage: function(storageName) {
+      var storage = this.storage[storageName]
       if (!(storage instanceof Storage)) {
-        throw new Error("Invalid storage: '" + name + "'")
+        throw new Error("Invalid storage: '" + storageName + "'")
       }
-
       return storage
     },
     /**
-     * Upload a slice of the model to a remote storage
+     * Store a slice of the model in a storage.
      *
-     * @param {String} storage
-     * @param {String} slice
-     * @return {Promise}
+     * @this Model
+     * @param {String} storageName
+     * @param {String} sliceName
      * */
-    upload: function (storage, slice) {
-      if (!slice) {
-        storage = slice
-        slice = null
-      }
+    store: function(storageName, sliceName) {
+      var storage = this.getStorage(storageName)
+      var data = this.getSlice(sliceName)
 
-      var data = this.getSlice(slice)
-      var storage = this.getStorage(storage)
-
-      return storage.upload(this, data)
+      return storage.store(this, data)
     },
     /**
-     * Update the model from a remote storage
+     * Fetch from a storage and restore the model with the data returned.
      *
-     * @param {String} storage
-     * @return {Promise}
+     * @this Model
+     * @param {String} storageName
      * */
-    update: function (storage) {
+    fetch: function(storageName) {
       var model = this
-      var storage = this.getStorage(storage)
+      var storage = this.getStorage(storageName)
 
-      return storage.update(this).then(function (response) {
-        if (response.ok) {
-          return response.json(function (data) {
-            model.fromRawData(data)
-            return model
-          }).catch(function (e) {
-            console.error("Failed to update model from remote storage: Invalid response data")
-            throw e
-          })
-        }
-        else {
-          console.warn("Failed to update model from remote storage: Unsuccessful request with status " + storage.status)
-          return response
-        }
+      return storage.fetch(this).then(function(serialized) {
+        model.restore(serialized)
+        return model
       })
     },
 
-    // PROPERTY ACCESS
+    // Access
 
     /**
-     * Returns the current active value of a property.
-     * - if the value changed, the changed value
-     * - otherwise the original one
+     * Get the current value of a property.
+     * If the value is changed, it returns the changed value.
+     * If the value is not changed, it returns the original value.
+     * The original value may be the default value.
      *
+     * @this Model
      * @param {String} propertyName
      * @return {*}
      * */
-    get: function (propertyName) {
-      this.verifyAccess(propertyName)
-      return this.isPropertyChanged(propertyName)
-          ? this.getChangedValue(propertyName)
-          : this.getOriginalValue(propertyName)
-    },
-    /**
-     * Returns the current value of a property.
-     * - the current active value if the value is set (changed or initialized)
-     * - otherwise returns the default value
-     *
-     * @param {String} propertyName
-     * @return {*}
-     * */
-    getValue: function (propertyName) {
-      return this.isSet(propertyName)
-          ? this.get(propertyName)
-          : this.getDefaultValue(propertyName)
-    },
-    /**
-     * Returns the original value which a property was initialized with.
-     *
-     * @param {String} propertyName
-     * @return {*}
-     * */
-    getOriginalValue: function (propertyName) {
-      this.verifyAccess(propertyName)
-      return this._values.hasOwnProperty(propertyName)
-          ? this._values[propertyName]
-          : null
-    },
-    /**
-     * Returns the default schema value of a property
-     *
-     * @param {String} propertyName
-     * @return {*}
-     * */
-    getDefaultValue: function (propertyName) {
-      this.verifyAccess(propertyName)
-      if (this.hasSchema(propertyName)) {
-        var property = this.getSchema(propertyName)
-        return property.getDefault()
+    get: function(propertyName) {
+      if (this.isChanged(propertyName)) {
+        return this.getChanged(propertyName)
       }
-      throw new Error("Unable to access unknown default value: '" + propertyName + "'")
+      if (this.isOriginal(propertyName)) {
+        return this.getOriginal(propertyName)
+      }
+      return this.getDefault(propertyName)
     },
     /**
-     * Returns the changed value of a property.
+     * Set the value of a property.
+     * If the value is the same as the current, it won't do anything.
+     * If the value differs from the current and the original, it will become a changed value.
+     * If the value differs from the current but is the same as the original,
+     * the changed value will be removed.
      *
-     * @param {String} propertyName
-     * @return {*}
-     * */
-    getChangedValue: function (propertyName) {
-      this.verifyAccess(propertyName)
-      return this._changed.hasOwnProperty(propertyName)
-          ? this._changed[propertyName]
-          : null
-    },
-
-    // PROPERTY CHECK
-
-    /**
-     * Check if a property is changed.
-     *
-     * @param {String} propertyName
-     * @return {boolean}
-     * */
-    isPropertyChanged: function (propertyName) {
-      this.verifyAccess(propertyName)
-      return this._changed.hasOwnProperty(propertyName)
-    },
-    /**
-     * Check if a property was initialized with a value.
-     * - an initialized value is not undefined and not null.
-     *
-     * @param {String} propertyName
-     * @return {boolean}
-     * */
-    isInitialized: function (propertyName) {
-      this.verifyAccess(propertyName)
-      return this._values.hasOwnProperty(propertyName) && this._values[propertyName] != null
-    },
-    /**
-     * Check if a property has a changed or initialized value.
-     *
-     * @param {String} propertyName
-     * @return {boolean}
-     * */
-    isSet: function (propertyName) {
-      this.verifyAccess(propertyName)
-      return this.isPropertyChanged(propertyName) || this.isInitialized(propertyName)
-    },
-    /**
-     * Check if a property has any value that is not null or undefined.
-     * - has a changed value
-     * - has an initialized value
-     * - has a default value
-     *
-     * @param {String} propertyName
-     * @return {boolean}
-     * */
-    hasValue: function (propertyName) {
-      this.verifyAccess(propertyName)
-      return null != this.getValue(propertyName)
-    },
-
-    // PROPERTY CHANGE
-
-    /**
-     * Sets a property's value
-     * - setting a value unequal to the original will:
-     *   - change the model
-     *   - trigger a change event
-     * - setting a value unequal to the previous changed value will:
-     *   - change the model if it isn't already changed
-     *   - trigger a change event
-     * - setting a value to the original value from a changed will:
-     *   - revert the property undoing the change
-     *   - trigger a change event
-     * - setting a value to its current active value will do nothing
-     *
+     * @this Model
      * @param {String} propertyName
      * @param {*} value
-     * @return {*} value
      * */
-    set: function (propertyName, value) {
-      this.verifyAccess(propertyName)
-      if (this.isInitialized(value) && value == this.getOriginalValue(propertyName)) {
-        this.revertChange(propertyName)
-      }
-      else {
-        if (this.hasSchema(propertyName)) {
-          var schema = this.getSchema(propertyName)
-          if (!schema.verifyValue(value)) {
-            throw new Error("Unable to set invalid type: " + schema.type + " " + propertyName)
-          }
+    set: function(propertyName, value) {
+      verifyModification(this, propertyName)
+      var property = getProperty(this, propertyName)
+      var originalValue = this.getOriginal(propertyName)
+      var defaultValue = this.getDefault(propertyName)
+      if (this.isChanged(propertyName)) {
+        if (property.equals(this.getChanged(propertyName), value)) {
+          return
         }
-
-        var changed
-
-        if (!this.isPropertyChanged(propertyName)) {
-          ++this.changedPropertyCount
-          changed = true
+        if (property.equals(originalValue, value)) {
+          unChangeValue(this, propertyName)
+          broadcastChange(this, propertyName)
         }
         else {
-          changed = this._changed[propertyName] !== value
+          changeValue(this, propertyName, value)
+          broadcastChange(this, propertyName)
         }
-
-        this._changed[propertyName] = value
-
+      }
+      else if (!property.equals(originalValue, value) && !property.equals(defaultValue, value)) {
+        changeValue(this, propertyName, value)
+        broadcastChange(this, propertyName)
+      }
+    },
+    /**
+     * Set the value of a property to its default.
+     * If the current value is already equals to the default nothing happens.
+     * If no property name is provided, all properties will be defaulted.
+     *
+     * @this Model
+     * @param {String} [propertyName]
+     * */
+    reset: function(propertyName) {
+      var model = this
+      var changed = false
+      function reset(name) {
+        if (model.isChanged(name)) {
+          unChangeValue(model, name)
+          changed = true
+        }
+        if (model.isOriginal(name)) {
+          delete model.valuesOriginal[name]
+          changed = true
+        }
         if (changed) {
-          this.broadcast("change")
+          broadcastPropertyChange(model, name)
         }
       }
-      return value
-    },
 
-    // REVERT
-
-    /**
-     * Reverts a property's changed value if it was changed before.
-     *
-     * @param {String} propertyName
-     * @return {boolean} true if it was changed before
-     * */
-    revertChange: function (propertyName) {
-      this.verifyAccess(propertyName)
-      if (this.isPropertyChanged(propertyName)) {
-        --this.changedPropertyCount
-        this.broadcast("change")
+      if (typeof propertyName == "string") {
+        reset(propertyName)
       }
-      return delete this._changed[propertyName]
-    },
-    /**
-     * Reverts all changes in the model.
-     *
-     * @return {boolean} if the model was changed
-     * */
-    revertAllChanges: function () {
-      var changed = this.isChanged
-
-      this._changed = {}
-      if (changed) {
-        this.broadcast("change")
-      }
-
-      return changed
-    },
-
-    // COMMIT
-
-    /**
-     * Set the original value to the changed value if it was changed
-     *
-     * @param {String} propertyName
-     * */
-    commitChange: function (propertyName) {
-      this.verifyAccess(propertyName)
-      if (this.isPropertyChanged(propertyName)) {
-        this._values[propertyName] = this._changed[propertyName]
-        delete this._changed[propertyName]
-        --this.changedPropertyCount
+      else {
+        this.keys().forEach(reset)
+        if (changed) {
+          broadcastGenericChange(model)
+        }
       }
     },
     /**
-     * Set all values to their changed values if they were changed
+     * Update one or all original values with changed ones. Changed values will be removed.
+     * If a value isn't changed, nothing happens.
+     *
+     * @this Model
+     * @param {String} [propertyName]
      * */
-    commitAllChanges: function () {
+    commit: function(propertyName) {
       var model = this
-      forIn(this._changed, function (name) {
-        model.commitChange(name)
+      function commit(name) {
+        if (model.isChanged(name)) {
+          commitChange(model, name, model.getChanged(name))
+        }
+      }
+      if (typeof propertyName == "string") {
+        commit(propertyName)
+      }
+      else {
+        this.keys().forEach(commit)
+      }
+    },
+    /**
+     * Revert one or all changed values so only the original remains.
+     * If a value isn't changed, nothing happens.
+     *
+     * @this Model
+     * @param {String} [propertyName]
+     * */
+    revert: function(propertyName) {
+      var model = this
+      function revert(name) {
+        if (model.isChanged(name)) {
+          unChangeValue(model, name)
+          broadcastChange(model, name)
+        }
+      }
+      if (typeof propertyName == "string") {
+        revert(propertyName)
+      }
+      else {
+        this.keys().forEach(revert)
+      }
+    },
+
+    // Value lists
+
+    /**
+     * Returns property names in an array.
+     *
+     * @this Model
+     * @return {Array}
+     * */
+    keys: function() {
+      return this.propertyList.slice()
+    },
+    /**
+     * Returns values as an array.
+     *
+     * @this Model
+     * @return {Array}
+     * */
+    values: function() {
+      return this.propertyList.map(function(propertyName) {
+        return this.get(propertyName)
+      }, this)
+    },
+    /**
+     * Returns the changed property names in an array.
+     *
+     * @this Model
+     * */
+    changedKeys: function() {
+      return this.propertyList.filter(function(propertyName) {
+        return this.isChanged(propertyName)
+      }, this)
+    },
+    /**
+     * Returns the changed values in an array.
+     *
+     * @this Model
+     * */
+    changedValues: function() {
+      return this.propertyList.filter(function(propertyName) {
+        return this.isChanged(propertyName)
+      }, this).map(function(propertyName) {
+        return this.get(propertyName)
+      }, this)
+    },
+
+    // Slice & Schema
+
+    /**
+     * Return a slice of the model as a raw key-value hash.
+     *
+     * @this Model
+     * @param {String} sliceName
+     * @return {Object}
+     * */
+    slice: function(sliceName) {
+      if (!this.slices.hasOwnProperty(sliceName)) {
+        throw new Error("Unable to get slice of model: invalid slice name '" + sliceName + "'")
+      }
+
+      var model = this
+      var slice = this.slices[sliceName]
+
+      if (typeof slice.schema == "function") {
+        return slice.schema(this)
+      }
+
+      var json = {}
+
+      forIn(model.schema, function(name, property) {
+        if (!slice.isInSchema(name) || model.isEmpty(name)) {
+          return
+        }
+
+        var value = model.get(name)
+        var subSlice = slice.getSubSlice(name)
+        var fieldName = property.name
+        var serialized
+
+        if (property.collection) {
+          serialized = value.serialize(this, property, subSlice)
+        }
+        else {
+          serialized = property.serialize(value, subSlice)
+        }
+
+        json[fieldName] = serialized
+      })
+
+      return json
+    },
+    isDefined: function(propertyName) {
+      return inSchema(this, propertyName)
+    },
+
+    // Hash getters
+
+    /**
+     * Return changed values as a key-value hash.
+     *
+     * @this Model
+     * @return {Object}
+     * */
+    changes: function() {
+      var model = this
+      return reduceKeys(this, function(propertyName, ret) {
+        if (model.isChanged(propertyName)) {
+          ret[propertyName] = model.getChanged(propertyName)
+        }
       })
     },
-
-    // ERASE
-
     /**
-     * Remove the value if a property
-     * Note: it doesn't remove the changed value.
+     * Return original values as a key-value hash.
      *
-     * @param {String} propertyName
+     * @this Model
+     * @return {Object}
      * */
-    eraseValue: function (propertyName) {
-      this.verifyAccess(propertyName)
-      this._values[propertyName] = null
+    originals: function() {
+      return transformValues(this, this.getOriginal.bind(this))
     },
     /**
-     * Clears the model's original values.
-     * Note: it doesn't remove changed values.
+     * Return default values as a key-value hash.
+     *
+     * @this Model
+     * @return {Object}
      * */
-    eraseAllValues: function () {
+    defaults: function() {
+      return transformValues(this, this.getDefault.bind(this))
+    },
+    /**
+     * Get invalid values as a key-value hash.
+     *
+     * @this Model
+     * @return {Object}
+     * */
+    invalids: function() {
+      return this.errors
+    },
+
+    // Single value getters
+
+    /**
+     * Get the default value of a property.
+     * If no property is provided, all default values of the model will be returned as a raw string-value hash.
+     *
+     * @this Model
+     * @param {String} [propertyName]
+     * @return {*}
+     * */
+    getDefault: function(propertyName) {
+      return getProperty(this, propertyName).getDefault()
+    },
+    /**
+     * Get the original value of a property.
+     * If no property is provided, all original values of the model will be returned as a raw string-value hash.
+     *
+     * @this Model
+     * @param {String} [propertyName]
+     * @return {*}
+     * */
+    getOriginal: function(propertyName) {
+      attemptAccess(this, propertyName)
+      return this.valuesOriginal[propertyName]
+    },
+    /**
+     * Get the changed value of a property.
+     *
+     * @this Model
+     * @param {String} propertyName
+     * @return {*}
+     * */
+    getChanged: function(propertyName) {
+      attemptAccess(this, propertyName)
+      return this.valuesChanged[propertyName]
+    },
+
+    // Quality and state checks
+
+    /**
+     * Check if a property has a value other than `null` or `undefined`.
+     *
+     * @this Model
+     * @param {String} propertyName
+     * @return {boolean}
+     * */
+    isEmpty: function(propertyName) {
+      return this.get(propertyName) == null
+    },
+    /**
+     * Check if a value or the model is changed.
+     *
+     * @this Model
+     * @param {String} [propertyName] if provided, it only checks for that property, otherwise the whole model
+     * @return {boolean}
+     * */
+    isChanged: function(propertyName) {
+      if (typeof propertyName == "string") {
+        return this.valuesChanged.hasOwnProperty(propertyName)
+      }
+      return this.changedPropertyCount > 0
+    },
+    /**
+     * Check if the current value is the original
+     *
+     * @param {String} propertyName
+     * @return {boolean}
+     * */
+    isOriginal: function(propertyName) {
+      return !this.isChanged(propertyName) && this.valuesOriginal.hasOwnProperty(propertyName)
+    },
+    /**
+     * Check if the current value of a property is the default one.
+     *
+     * @this Model
+     * @param {String} [propertyName]
+     * @return {boolean}
+     * */
+    isDefault: function(propertyName) {
+      return !this.isChanged(propertyName) && !this.valuesOriginal.hasOwnProperty(propertyName)
+    },
+    /**
+     * Check if a property has default value.
+     *
+     * @this Model
+     * @param {String} propertyName
+     * @return {boolean}
+     * */
+    hasDefault: function(propertyName) {
+      return this.isDefined(propertyName) && getProperty(this, propertyName).hasDefault()
+    },
+    /**
+     * Check if a property is required.
+     *
+     * @this Model
+     * @param {String} propertyName
+     * @return {boolean}
+     * */
+    isRequired: function(propertyName) {
+      return getProperty(this, propertyName).required
+    },
+    /**
+     * Check if a property's current value is valid.
+     * It won't update the internal validation registry.
+     *
+     * @this Model
+     * @param {String} [propertyName]
+     * @return {boolean}
+     * */
+    isValid: function(propertyName) {
+      return getProperty(this, propertyName).validate(this.get(propertyName))
+    },
+    /**
+     * Check if a property's value equals to another value.
+     *
+     * @this Model
+     * @param {String} propertyName
+     * @param {*} value
+     * @return {boolean}
+     * */
+    equals: function(propertyName, value) {
+      return getProperty(this, propertyName).equals(this.get(propertyName), value)
+    },
+    /**
+     * Returns the type of a property, or compares it to the given type.
+     *
+     * @this Model
+     * @param {String} propertyName
+     * @param {String} [compare]
+     * @return {String|Boolean}
+     * */
+    typeOf: function(propertyName, compare) {
+      var type = getProperty(this, propertyName).type
+      if (typeof compare == "string") {
+        return type === compare
+      }
+      return type
+    },
+    /**
+     * Returns the constructor of a property, or compares it to its value.
+     *
+     * @this Model
+     * @param {String} propertyName
+     * @param {Function} [compare]
+     * @return {Function|Boolean}
+     * */
+    instanceOf: function(propertyName, compare) {
+      var Constructor = getProperty(this, propertyName).Constructor
+      if (typeof compare == "function") {
+        return this.get(propertyName) instanceof Constructor
+      }
+      return Constructor
+    },
+
+    // Validation
+
+    /**
+     * Validate the model or just one property according to its property rules.
+     * It will update the internal validation registry.
+     *
+     * @this Model
+     * @param {String} [propertyName]
+     * @return {boolean}
+     * */
+    validate: function(propertyName) {
       var model = this
-      forIn(this._changed, function (name) {
-        model.eraseValue(name)
-      })
+      var isValid = true
+      this.errors = {}
+      function validate(name) {
+        var property = getProperty(model, name)
+        var validationError = property.validate(model.get(name))
+        if (validationError) {
+          model.errors[name] = validationError
+          isValid = false
+        }
+      }
+      if (typeof propertyName == "string") {
+        validate(propertyName)
+      }
+      else {
+        this.keys().every(validate)
+      }
+      return isValid
     }
   }
 })
+
+module.exports = Model

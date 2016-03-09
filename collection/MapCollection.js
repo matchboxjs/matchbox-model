@@ -1,10 +1,10 @@
-var include = require("matchbox-factory/include")
-var forIn = require("matchbox-util/object/in")
+var include = require("backyard/function/include")
+var forIn = require("backyard/object/in")
 var Collection = require("./Collection")
 
 module.exports = MapCollection
 
-function MapCollection () {
+function MapCollection() {
   Collection.call(this)
   this.__keys = []
   this.__values = []
@@ -12,24 +12,23 @@ function MapCollection () {
 
 include(MapCollection, Collection)
 
-MapCollection.prototype.toRawData = function (property, slice) {
-  return this.map(function (modelData) {
-    return property.getRawValueOf(modelData, slice)
+MapCollection.prototype.serialize = function(property, slice) {
+  return this.map(function(value) {
+    return property.getRawValueOf(value, slice)
   })
 }
 
-MapCollection.prototype.fromRawData = function (storedValue, processValue) {
+MapCollection.prototype.parse = function(serializedMap, property) {
   var map = this
 
-  forIn(storedValue, function (key, value) {
-    var realValue = processValue(value)
-    map.set(key, realValue)
+  forIn(serializedMap, function(key, serializedValue) {
+    map.set(key, property.restore(serializedValue))
   })
 
   return this
 }
 
-MapCollection.prototype.keyOf = function (value) {
+MapCollection.prototype.keyOf = function(value) {
   var i = this.__values.indexOf(value)
 
   if (!!~i) {
@@ -39,7 +38,7 @@ MapCollection.prototype.keyOf = function (value) {
   return null
 }
 
-MapCollection.prototype.get = function (key) {
+MapCollection.prototype.get = function(key) {
   var i = this.__keys.indexOf(key)
 
   if (!!~i) {
@@ -47,7 +46,7 @@ MapCollection.prototype.get = function (key) {
   }
 }
 
-MapCollection.prototype.set = function (key, value) {
+MapCollection.prototype.set = function(key, value) {
   var i = this.__keys.indexOf(key)
 
   if (!!~i) {
@@ -65,11 +64,11 @@ MapCollection.prototype.set = function (key, value) {
   return value
 }
 
-MapCollection.prototype.has = function (key) {
+MapCollection.prototype.has = function(key) {
   return !!~this.__keys.indexOf(key)
 }
 
-MapCollection.prototype.delete = function (key) {
+MapCollection.prototype.delete = function(key) {
   var i = this.__keys.indexOf(key)
 
   if (!!~i) {
@@ -81,50 +80,50 @@ MapCollection.prototype.delete = function (key) {
   return false
 }
 
-MapCollection.prototype.clear = function () {
+MapCollection.prototype.clear = function() {
   this.__keys = []
   this.__values = []
   this.broadcast("change")
 }
 
-MapCollection.prototype.forEach = function (cb, context) {
+MapCollection.prototype.forEach = function(cb, context) {
   var collection = this
   context = context || this
-  this.__keys.forEach(function (key, i) {
+  this.__keys.forEach(function(key, i) {
     cb.call(context, collection.__values[i], key, collection)
   })
 }
 
-MapCollection.prototype.map = function (cb, context) {
+MapCollection.prototype.map = function(cb, context) {
   var collection = this
   context = context || this
   var obj = {}
-  this.__keys.forEach(function (key, i) {
+  this.__keys.forEach(function(key, i) {
     obj[key] = cb.call(context, collection.__values[i], key, collection)
   })
   return obj
 }
 
-MapCollection.prototype.reduce = function (cb, initValue, context) {
+MapCollection.prototype.reduce = function(cb, initValue, context) {
   var collection = this
   context = context || this
-  return this.__keys.reduce(function (aggregateValue, key, i) {
+  return this.__keys.reduce(function(aggregateValue, key, i) {
     cb.call(context, aggregateValue, collection.__values[i], key, collection)
   }, initValue)
 }
 
-MapCollection.prototype.filter = function (cb, context) {
+MapCollection.prototype.filter = function(cb, context) {
   var collection = this
   context = context || this
-  return this.__keys.filter(function (key, i) {
+  return this.__keys.filter(function(key, i) {
     return cb.call(context, collection.__values[i], key, collection)
   })
 }
 
-MapCollection.prototype.some = function (cb, context) {
+MapCollection.prototype.some = function(cb, context) {
   var collection = this
   context = context || this
-  return this.__keys.some(function (key, i) {
+  return this.__keys.some(function(key, i) {
     cb.call(context, collection.__values[i], key, collection)
   })
 }

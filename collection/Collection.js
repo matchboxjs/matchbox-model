@@ -1,14 +1,14 @@
-var include = require("matchbox-factory/include")
-var Radio = require("matchbox-radio")
+var include = require("backyard/function/include")
+var Radio = require("stations")
 
 module.exports = Collection
 
-function Collection () {
+function Collection() {
   Radio.call(this)
 }
 
 include(Collection, Radio)
 
-Collection.prototype.toRawData = function (property, slice) {}
+Collection.prototype.serialize = function(property, slice) {}
 
-Collection.prototype.fromRawData = function (rawData, processValue) {}
+Collection.prototype.parse = function(value, property) {}

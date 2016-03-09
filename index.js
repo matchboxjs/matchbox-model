@@ -1,6 +1,6 @@
 var Model = require("./Model")
 var Slice = require("./Slice")
-var Storage = require("./Storage")
+var Storage = require("./storage/Storage")
 var collection = require("./collection")
 var schema = require("./schema")
 
