@@ -2,7 +2,7 @@ matchbox-model
 ==============
 
 [![Build Status](https://travis-ci.org/matchboxjs/matchbox-model.svg)](https://travis-ci.org/matchboxjs/matchbox-model)
-	https://img.shields.io/npm/v/npm.svg
+[![npm](https://img.shields.io/npm/v/matchbox-model.svg)](https://www.npmjs.com/package/matchbox-model)
 
 **[Stability](https://github.com/matchboxjs/matchbox/wiki/Documentations#stability-levels):** `Experimental`
 
