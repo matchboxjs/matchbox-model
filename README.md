@@ -5,8 +5,6 @@ matchbox-model
 [![npm](https://img.shields.io/npm/v/matchbox-model.svg)](https://www.npmjs.com/package/matchbox-model)
 [![stability](https://img.shields.io/badge/stability-experimental-orange.svg)](https://github.com/matchboxjs/matchbox/wiki/Stability)
 
-**[Stability](https://github.com/matchboxjs/matchbox/wiki/Documentations#stability-levels):** `Experimental`
-
 ## Installing
 
     npm install matchbox-model
