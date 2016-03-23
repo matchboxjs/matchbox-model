@@ -240,13 +240,8 @@ var Model = factory({
             // not a collection
             value = property.restore(serializedValue)
           }
+          model.valuesOriginal[name] = value
         }
-        else if (!model.isSet(name)) {
-          // no value to restore, use default
-          value = property.getDefault()
-        }
-
-        model.valuesOriginal[name] = value
       })
 
       return this
@@ -277,7 +272,7 @@ var Model = factory({
      * */
     store: function(storageName, sliceName) {
       var storage = this.getStorage(storageName)
-      var data = this.getSlice(sliceName)
+      var data = this.slice(sliceName)
 
       return storage.store(this, data)
     },
@@ -605,6 +600,22 @@ var Model = factory({
       attemptAccess(this, propertyName)
       return this.valuesChanged[propertyName]
     },
+    /**
+     * Get the serialized value of a property
+     * @param {String} propertyName
+     * @return {*}
+     * */
+    getRaw: function(propertyName) {
+      var property = getProperty(this, propertyName)
+      var value = this.get(propertyName)
+
+      if (property.collection) {
+        return value.serialize(this, property)
+      }
+      else {
+        return property.serialize(value)
+      }
+    },
 
     // Quality and state checks
 
@@ -617,6 +628,14 @@ var Model = factory({
      * */
     isEmpty: function(propertyName) {
       return this.get(propertyName) == null
+    },
+    /**
+     * Check if a property has an original or changed value.
+     * @param {String} propertyName
+     * @return {boolean}
+     * */
+    isSet: function(propertyName) {
+      return this.isChanged(propertyName) || this.isOriginal(propertyName)
     },
     /**
      * Check if a value or the model is changed.
