@@ -577,7 +577,9 @@ var Model = factory({
      * @return {*}
      * */
     getDefault: function(propertyName) {
-      return this.valuesDefault[propertyName]
+      return this.valuesDefault.hasOwnProperty(propertyName)
+        ? this.valuesDefault[propertyName]
+        : null
     },
     /**
      * Get the original value of a property.
