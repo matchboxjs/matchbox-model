@@ -10,7 +10,3 @@ function StringProperty(property) {
 inherit(StringProperty, Property)
 
 StringProperty.prototype.type = "string"
-
-StringProperty.prototype.verifyValue = function(value) {
-  return typeof value == "string"
-}

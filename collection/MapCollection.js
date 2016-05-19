@@ -14,7 +14,7 @@ include(MapCollection, Collection)
 
 MapCollection.prototype.serialize = function(property, slice) {
   return this.map(function(value) {
-    return property.getRawValueOf(value, slice)
+    return property.serialize(value, slice)
   })
 }
 

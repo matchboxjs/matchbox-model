@@ -10,7 +10,3 @@ function BooleanProperty(property) {
 inherit(BooleanProperty, Property)
 
 BooleanProperty.prototype.type = "boolean"
-
-BooleanProperty.prototype.verifyValue = function(value) {
-  return typeof value == "boolean"
-}

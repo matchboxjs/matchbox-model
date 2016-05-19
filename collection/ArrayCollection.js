@@ -19,7 +19,7 @@ function change(collection, arrayMethod, args) {
 
 ArrayCollection.prototype.serialize = function(property, slice) {
   return this.map(function(modelData) {
-    return property.getRawValueOf(modelData, slice)
+    return property.serialize(modelData, slice)
   })
 }
 

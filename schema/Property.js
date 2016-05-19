@@ -28,8 +28,6 @@ function Property(property) {
 }
 
 Property.prototype.type = ""
-// TODO: treat non primitive values differently when checking for change on model
-Property.prototype.primitive = true
 
 Property.prototype.serialize = function(value, slice) {
   return value
@@ -45,21 +43,21 @@ Property.prototype.restore = function(serialized) {
 
 Property.prototype.getDefault = function() {
   var defaultValue = typeof this.default == "function"
-      ? this.default()
-      : this.default
+    ? this.default()
+    : this.default
   var collection
 
   if (this.collection == "array") {
     collection = new ArrayCollection()
     if (defaultValue != null) {
-      collection.fromRawData(defaultValue)
+      collection.parse(defaultValue)
     }
     return collection
   }
   else if (this.collection == "map") {
     collection = new Map()
     if (defaultValue != null) {
-      collection.fromRawData(defaultValue)
+      collection.parse(defaultValue)
     }
     return collection
   }
@@ -77,7 +75,7 @@ Property.prototype.isValid = function(value) {
   if (this.required && value == null) {
     return ERR_REQUIRED
   }
-  if (this.type && this.primitive && typeof value != this.type) {
+  if (this.type && typeof value != this.type) {
     return ERR_TYPE_MISMATCH
   }
   if (this.Constructor && !(value instanceof this.Constructor)) {

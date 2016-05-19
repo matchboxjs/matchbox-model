@@ -137,12 +137,14 @@ var Model = factory({
     Radio.call(this)
     this.valuesOriginal = {}
     this.valuesChanged = {}
+    this.valuesDefault = {}
     this.errors = {}
     this.changedPropertyCount = 0
     Model.initialize(this)
     this.keys().forEach(function(propertyName) {
       var property = getProperty(model, propertyName)
-      if (property.primitive) return
+
+      model.valuesDefault[propertyName] = property.getDefault()
 
       if (property.type == "model" || property.collection) {
         var value = model.get(propertyName)
@@ -505,7 +507,7 @@ var Model = factory({
         var serialized
 
         if (property.collection) {
-          serialized = value.serialize(this, property, subSlice)
+          serialized = value.serialize(property, subSlice)
         }
         else {
           serialized = property.serialize(value, subSlice)
@@ -575,7 +577,7 @@ var Model = factory({
      * @return {*}
      * */
     getDefault: function(propertyName) {
-      return getProperty(this, propertyName).getDefault()
+      return this.valuesDefault[propertyName]
     },
     /**
      * Get the original value of a property.
@@ -610,7 +612,7 @@ var Model = factory({
       var value = this.get(propertyName)
 
       if (property.collection) {
-        return value.serialize(this, property)
+        return value.serialize(property)
       }
       else {
         return property.serialize(value)

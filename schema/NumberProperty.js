@@ -10,7 +10,3 @@ function NumberProperty(property) {
 inherit(NumberProperty, Property)
 
 NumberProperty.prototype.type = "number"
-
-NumberProperty.prototype.verifyValue = function(value) {
-  return typeof value == "number" && !isNaN(value)
-}

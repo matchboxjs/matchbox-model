@@ -10,20 +10,11 @@ function DateProperty(property) {
 inherit(DateProperty, Property)
 
 DateProperty.prototype.type = "date"
-DateProperty.prototype.primitive = false
 
-DateProperty.prototype.getRawValueOf = function(modelValue) {
-  return this.toString(modelValue)
+DateProperty.prototype.serialize = function(modelValue) {
+  return +modelValue
 }
 
-DateProperty.prototype.getRealValueOf = function(rawValue) {
+DateProperty.prototype.parse = function(rawValue) {
   return new Date(rawValue)
-}
-
-DateProperty.prototype.verifyValue = function(value) {
-  return value instanceof Date
-}
-
-DateProperty.prototype.toString = function(value) {
-  return value.toString()
 }

@@ -10,20 +10,11 @@ function UtcDateProperty(property) {
 inherit(UtcDateProperty, Property)
 
 UtcDateProperty.prototype.type = "utc"
-UtcDateProperty.prototype.primitive = false
 
-UtcDateProperty.prototype.getRawValueOf = function(modelValue) {
-  return this.toString(modelValue)
+UtcDateProperty.prototype.serialize = function(modelValue) {
+  return +modelValue
 }
 
-UtcDateProperty.prototype.getRealValueOf = function(rawValue) {
+UtcDateProperty.prototype.parse = function(rawValue) {
   return new Date(rawValue)
-}
-
-UtcDateProperty.prototype.verifyValue = function(value) {
-  return value instanceof Date
-}
-
-UtcDateProperty.prototype.toString = function(value) {
-  return "" + value.getTime()
 }

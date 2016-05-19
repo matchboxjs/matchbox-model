@@ -10,14 +10,9 @@ function ModelProperty(property) {
 inherit(ModelProperty, Property)
 
 ModelProperty.prototype.type = "model"
-ModelProperty.prototype.primitive = false
 
 ModelProperty.prototype.serialize = function(model, slice) {
   return model.slice(slice)
-}
-
-ModelProperty.prototype.verifyValue = function(value) {
-  return value instanceof this.Constructor
 }
 
 ModelProperty.prototype.instantiate = function(data) {
